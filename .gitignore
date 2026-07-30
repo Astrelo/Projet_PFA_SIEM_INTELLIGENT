@@ -1,0 +1,25 @@
+# Modèles ML
+models/
+*.joblib
+*.pkl
+
+# Données sensibles
+*.csv
+data/
+
+# Logs
+*.log
+*.txt
+/var/log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+wazuh-ml-env/
+.env
+
+# Credentials
+passwords.txt
+*.key
+*.pem
