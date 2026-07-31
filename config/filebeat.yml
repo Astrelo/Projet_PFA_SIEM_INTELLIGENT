@@ -1,1 +1,43 @@
+# ===========================================
+# Filebeat Configuration — SIEM Intelligent
+# Collecte : Snort IDS + ML Detection
+# ===========================================
 
+filebeat.inputs:
+
+# Pipeline 1 — Alertes Snort IDS
+- type: log
+  enabled: true
+  paths:
+    - /var/log/snort/alert_fast.txt
+  fields:
+    log_type: snort
+  fields_under_root: true
+
+# Pipeline 2 — Alertes Machine Learning
+- type: journald
+  enabled: true
+  id: ml-detection-journal
+  seek: tail
+  include_matches:
+    - SYSLOG_IDENTIFIER=ml-detection
+  fields:
+    log_type: ml-detection
+  fields_under_root: true
+
+# Sortie vers Elasticsearch
+output.elasticsearch:
+  hosts: ["https://localhost:9200"]
+  username: "elastic"
+  password: "wazuh123"
+  ssl.verification_mode: "none"
+  indices:
+    - index: "snort-logs-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "snort"
+    - index: "ml-detection-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "ml-detection"
+
+setup.ilm.enabled: false
+setup.template.enabled: false
