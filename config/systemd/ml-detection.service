@@ -1,1 +1,24 @@
+# ===========================================
+# Service Systemd — ML Detection
+# Lance detect_netflow_fixed.py au démarrage
+# ===========================================
 
+[Unit]
+Description=ML Intrusion Detection Service — Random Forest
+After=network.target elasticsearch.service
+Wants=elasticsearch.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/wazuh-ml
+ExecStart=/opt/wazuh-ml/wazuh-ml-env/bin/python3 -W ignore -u /opt/wazuh-ml/detect_netflow_fixed.py
+Environment=PYTHONUNBUFFERED=1
+SyslogIdentifier=ml-detection
+StandardOutput=journal
+StandardError=journal
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
