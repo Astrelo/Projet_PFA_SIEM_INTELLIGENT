@@ -1,73 +1,118 @@
-# 🏗️ Architecture Détaillée
+# 🏗️ Architecture du système
 
 ## Vue d'ensemble
 
-Le système repose sur deux pipelines de détection parallèles
-qui s'envoient vers un backend Elasticsearch commun.
+L'architecture du projet repose sur deux mécanismes complémentaires de détection des intrusions :
 
-## Pipeline 1 — Snort IDS (Signatures)
+- **Pipeline 1 : Snort IDS**, qui détecte les attaques connues grâce à des règles de signatures.
+- **Pipeline 2 : Machine Learning (Random Forest)**, qui identifie les comportements anormaux à partir des flux réseau.
 
-Trafic réseau entrant
-│
-▼
-Snort IDS
-(analyse paquets vs règles local.rules)
-│
-▼
-/var/log/snort/alert_fast.txt
-│
-▼
-Filebeat
-(input type: log)
-│
-▼
-Elasticsearch index: snort-logs-YYYY.MM.DD
-│
-▼
-Kibana
+Les événements générés par ces deux pipelines sont centralisés dans **Elasticsearch** puis visualisés à travers **Kibana**, offrant une plateforme unique de supervision et d'analyse des incidents de sécurité.
 
+---
 
-## Pipeline 2 — Random Forest (ML)
+## Pipeline 1 — Détection par signatures (Snort IDS)
 
-Trafic réseau entrant
-│
-▼
-pmacctd
-(capture flux CSV toutes les 10s)
-│
-▼
+Le premier pipeline repose sur **Snort**, un système de détection d'intrusion (IDS) basé sur des signatures. Les paquets réseau sont analysés en temps réel et comparés aux règles définies dans `local.rules`. Les alertes générées sont collectées par Filebeat puis envoyées vers Elasticsearch afin d'être consultées dans Kibana.
+
+```text
+Trafic réseau
+      │
+      ▼
+  Snort IDS
+(Analyse des paquets)
+      │
+      ▼
+alert_fast.txt
+      │
+      ▼
+   Filebeat
+      │
+      ▼
+Elasticsearch
+(snort-logs-*)
+      │
+      ▼
+    Kibana
+```
+
+---
+
+## Pipeline 2 — Détection par Machine Learning
+
+Le second pipeline est basé sur un modèle **Random Forest** entraîné à partir du jeu de données **CICIDS2017**.
+
+Les flux réseau sont capturés par **pmacctd**, transformés en caractéristiques (features), puis analysés par le modèle afin de déterminer si le trafic est légitime ou malveillant. Les résultats sont enregistrés dans les journaux système, collectés par Filebeat et transmis à Elasticsearch pour être visualisés dans Kibana.
+
+```text
+Trafic réseau
+      │
+      ▼
+   pmacctd
+(Capture des flux)
+      │
+      ▼
 detect_netflow_fixed.py
-(construit 78 features par flux)
-│
-▼
-ids_model.joblib
-(Random Forest 200 arbres)
-│
-▼
-Alerte → journal systemd (ml-detection)
-│
-▼
-Filebeat
-(input type: journald)
-│
-▼
-Elasticsearch index: ml-detection-YYYY.MM.DD
-│
-▼
-Kibana
+(Extraction des features)
+      │
+      ▼
+Random Forest
+(ids_model.joblib)
+      │
+      ▼
+Journal systemd
+(ml-detection)
+      │
+      ▼
+   Filebeat
+      │
+      ▼
+Elasticsearch
+(ml-detection-*)
+      │
+      ▼
+    Kibana
+```
 
+---
 
-## Fichiers clés
+# 📁 Fichiers principaux
 
-| Fichier | Rôle |
-|---------|------|
-| `ml/train_model.py` | Entraînement one-shot du modèle |
-| `ml/detect_netflow_fixed.py` | Détection temps réel en production |
-| `models/ids_model.joblib` | Modèle Random Forest sérialisé |
-| `models/scaler.joblib` | StandardScaler pour normalisation |
-| `models/label_encoder.joblib` | Encodeur des classes |
-| `models/feature_names.joblib` | Liste des 78 features |
-| `config/filebeat.yml` | Collecte Snort + ML → Elasticsearch |
-| `config/snort/local.rules` | Règles Snort personnalisées |
-| `config/systemd/ml-detection.service` | Auto-démarrage du service ML |
-| `config/pmacct/pmacctd.conf` | Capture flux réseau |
+| Fichier | Description |
+|---------|-------------|
+| `ml/train_model.py` | Entraîne le modèle Random Forest à partir du jeu de données CICIDS2017. |
+| `ml/detect_netflow_fixed.py` | Analyse les flux réseau en temps réel et applique le modèle entraîné. |
+| `models/ids_model.joblib` | Modèle Random Forest sérialisé utilisé pour la détection. |
+| `models/scaler.joblib` | Objet `StandardScaler` utilisé pour normaliser les données d'entrée. |
+| `models/label_encoder.joblib` | Encodeur des différentes classes d'attaques détectées. |
+| `models/feature_names.joblib` | Liste des caractéristiques (features) utilisées par le modèle. |
+| `config/filebeat.yml` | Configuration de Filebeat pour la collecte et l'envoi des journaux vers Elasticsearch. |
+| `config/snort/local.rules` | Ensemble des règles personnalisées utilisées par Snort. |
+| `config/systemd/ml-detection.service` | Service systemd permettant de lancer automatiquement le module de détection au démarrage. |
+| `config/pmacct/pmacctd.conf` | Configuration de pmacctd pour la capture des flux réseau. |
+
+---
+
+## Flux global du système
+
+```text
+                    Trafic réseau
+                          │
+             ┌────────────┴────────────┐
+             │                         │
+             ▼                         ▼
+        Snort IDS                 pmacctd
+             │                         │
+             ▼                         ▼
+     Alertes Snort          Module Machine Learning
+             │                         │
+             └────────────┬────────────┘
+                          ▼
+                      Filebeat
+                          │
+                          ▼
+                   Elasticsearch
+                          │
+                          ▼
+                       Kibana
+```
